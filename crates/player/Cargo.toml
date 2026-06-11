@@ -13,3 +13,4 @@ tsbot-ts-connection = { path = "../ts-connection" }
 tokio = { workspace = true, features = ["sync", "process", "macros", "rt"] }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+rand = "0.10"

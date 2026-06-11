@@ -50,15 +50,15 @@ pub fn parse(text: &str) -> Option<Command> {
 /// 把快照格式化为 `!queue` 的回复文本。
 pub fn format_queue(s: &Snapshot) -> String {
     let mut out = match &s.now_playing {
-        Some(np) => format!("正在播放: {np}"),
+        Some(np) => format!("正在播放: {}", np.title),
         None => "当前没有播放".to_string(),
     };
     if s.upcoming.is_empty() {
         out.push_str("\n队列为空");
     } else {
         out.push_str("\n队列:");
-        for (i, label) in s.upcoming.iter().enumerate() {
-            out.push_str(&format!("\n  {}. {}", i + 1, label));
+        for (i, q) in s.upcoming.iter().enumerate() {
+            out.push_str(&format!("\n  {}. {}", i + 1, q.title));
         }
     }
     out
@@ -155,7 +155,11 @@ mod tests {
     fn format_queue_empty_and_filled() {
         let empty = Snapshot::default();
         assert!(format_queue(&empty).contains("没有播放"));
-        let filled = Snapshot { now_playing: Some("A".into()), upcoming: vec!["B".into()] };
+        let filled = Snapshot {
+            now_playing: Some(player::NowPlaying { title: "A".into(), elapsed: std::time::Duration::ZERO, duration: None }),
+            upcoming: vec![player::QueueItem { title: "B".into(), duration: None }],
+            ..Default::default()
+        };
         let s = format_queue(&filled);
         assert!(s.contains("正在播放: A"));
         assert!(s.contains("1. B"));
