@@ -63,11 +63,35 @@ fn opus_music_packet(data: &[u8]) -> OutPacket {
     OutAudio::new(&AudioData::C2S { id: 0, codec: CodecType::OpusMusic, data })
 }
 
-/// 收到的频道文本消息，driver 转发给指令处理器。
+/// 回复目标。
+#[derive(Clone, Copy)]
+pub enum ReplyDest {
+    Channel,
+    Client(ClientId),
+}
+
+/// 一条待发回复。
+pub struct Reply {
+    pub dest: ReplyDest,
+    pub text: String,
+}
+
+/// 从入口 target 计算回复目标；Server 广播返回 None（不处理）。
+pub fn reply_dest_for(target: &MessageTarget, invoker_id: ClientId) -> Option<ReplyDest> {
+    match target {
+        MessageTarget::Channel => Some(ReplyDest::Channel),
+        MessageTarget::Client(_) => Some(ReplyDest::Client(invoker_id)),
+        MessageTarget::Poke(_) => Some(ReplyDest::Client(invoker_id)),
+        MessageTarget::Server => None,
+    }
+}
+
+/// 收到的指令消息，driver 转发给指令处理器。
 pub struct ChatMessage {
     pub text: String,
     pub invoker_id: ClientId,
     pub invoker_uid: String,
+    pub reply_to: ReplyDest,
 }
 
 /// 向机器人所在频道发送一条文本。
@@ -81,34 +105,52 @@ fn send_channel_text(con: &mut Connection, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// 向某客户端发送私信文本。
+fn send_private_text(con: &mut Connection, client_id: ClientId, text: &str) -> Result<()> {
+    let cmd = c2s::OutSendTextMessageMessage::new(&mut std::iter::once(c2s::OutSendTextMessagePart {
+        target: TextMessageTargetMode::Client,
+        target_client_id: Some(client_id),
+        message: text.into(),
+    }));
+    cmd.send(con)?;
+    Ok(())
+}
+
 /// 驱动单条连接直到断线返回 Err。
 pub async fn run<S: OpusSource>(
     con: &mut Connection,
     source: &mut S,
     chat_tx: &mpsc::Sender<ChatMessage>,
-    reply_rx: &mut mpsc::Receiver<String>,
+    reply_rx: &mut mpsc::Receiver<Reply>,
 ) -> Result<()> {
     let own_id = con.get_state()?.own_client;
     let mut interval = tokio::time::interval(Duration::from_millis(20));
     loop {
-        while let Ok(text) = reply_rx.try_recv() {
-            if let Err(e) = send_channel_text(con, &text) {
+        while let Ok(reply) = reply_rx.try_recv() {
+            let r = match reply.dest {
+                ReplyDest::Channel => send_channel_text(con, &reply.text),
+                ReplyDest::Client(id) => send_private_text(con, id, &reply.text),
+            };
+            if let Err(e) = r {
                 tracing::warn!(%e, "发送回复失败");
             }
         }
         let events = con.events().try_for_each(|item| {
             if let StreamItem::BookEvents(evs) = &item {
                 for e in evs {
-                    if let Event::Message { target: MessageTarget::Channel, invoker, message } = e {
+                    if let Event::Message { target, invoker, message } = e {
                         if invoker.id != own_id {
-                            tracing::debug!(%message, "收到频道消息");
-                            let invoker_uid =
-                                invoker.uid.as_ref().map(|u| u.to_string()).unwrap_or_default();
-                            let _ = chat_tx.try_send(ChatMessage {
-                                text: message.clone(),
-                                invoker_id: invoker.id,
-                                invoker_uid,
-                            });
+                            if let Some(reply_to) = reply_dest_for(target, invoker.id) {
+                                tracing::debug!(%message, "收到指令消息");
+                                let invoker_uid =
+                                    invoker.uid.as_ref().map(|u| u.to_string()).unwrap_or_default();
+                                let _ = chat_tx.try_send(ChatMessage {
+                                    text: message.clone(),
+                                    invoker_id: invoker.id,
+                                    invoker_uid,
+                                    reply_to,
+                                });
+                            }
                         }
                     }
                 }
@@ -143,7 +185,7 @@ pub async fn run_persistent<S: OpusSource>(
     settings: ConnectSettings,
     source: &mut S,
     chat_tx: mpsc::Sender<ChatMessage>,
-    mut reply_rx: mpsc::Receiver<String>,
+    mut reply_rx: mpsc::Receiver<Reply>,
     shutdown: impl Future<Output = ()>,
 ) -> Result<()> {
     tokio::pin!(shutdown);
@@ -197,5 +239,25 @@ pub async fn run_persistent<S: OpusSource>(
             _ = tokio::time::sleep(backoff) => {}
         }
         backoff = (backoff * 2).min(Duration::from_secs(30));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reply_dest_routing() {
+        let id = ClientId(7);
+        assert!(matches!(reply_dest_for(&MessageTarget::Channel, id), Some(ReplyDest::Channel)));
+        assert!(matches!(
+            reply_dest_for(&MessageTarget::Client(ClientId(1)), id),
+            Some(ReplyDest::Client(c)) if c == id
+        ));
+        assert!(matches!(
+            reply_dest_for(&MessageTarget::Poke(ClientId(1)), id),
+            Some(ReplyDest::Client(c)) if c == id
+        ));
+        assert!(reply_dest_for(&MessageTarget::Server, id).is_none());
     }
 }
