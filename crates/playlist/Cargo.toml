@@ -1,0 +1,15 @@
+[package]
+name = "tsbot-playlist"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "playlist"
+
+[dependencies]
+serde = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
