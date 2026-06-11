@@ -76,7 +76,7 @@ pub async fn run(
         let reply = match cmd {
             Command::Play(arg) => match source::resolve(&arg).await {
                 Ok(r) => {
-                    let label = r.label.clone();
+                    let label = r.title.clone();
                     handle.play(r);
                     format!("已添加: {label}")
                 }

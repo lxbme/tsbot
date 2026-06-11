@@ -90,7 +90,7 @@ impl Player {
     fn update_snapshot(&self) {
         let mut s = self.snapshot.lock().unwrap();
         s.now_playing = self.current.as_ref().map(|c| c.label.clone());
-        s.upcoming = self.queue.iter().map(|r| r.label.clone()).collect();
+        s.upcoming = self.queue.iter().map(|r| r.title.clone()).collect();
     }
 }
 
@@ -106,7 +106,7 @@ impl OpusSource for Player {
                             self.current = Some(Current {
                                 _child: child,
                                 reader: PcmFrameReader::new(stdout),
-                                label: r.label,
+                                label: r.title,
                             });
                             self.update_snapshot();
                         }
@@ -139,7 +139,7 @@ mod tests {
     use super::*;
 
     fn res(label: &str) -> Resolved {
-        Resolved { input: format!("/nonexistent/{label}"), label: label.to_string() }
+        Resolved { input: format!("/nonexistent/{label}"), title: label.to_string(), duration: None }
     }
 
     #[tokio::test]
