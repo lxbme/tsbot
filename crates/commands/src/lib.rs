@@ -86,7 +86,8 @@ pub fn parse(text: &str) -> Option<Command> {
 /// Duration → "m:ss"。
 fn fmt_dur(d: Duration) -> String {
     let s = d.as_secs();
-    format!("{}:{:02}", s / 60, s % 60)
+    // 用全角冒号，避免 TeamSpeak 把 ":0X" 等渲染成表情符号
+    format!("{}：{:02}", s / 60, s % 60)
 }
 
 /// 可选时长：None 显示 LIVE。
@@ -400,8 +401,8 @@ mod tests {
 
     #[test]
     fn fmt_dur_formats_mss() {
-        assert_eq!(fmt_dur(Duration::from_secs(83)), "1:23");
-        assert_eq!(fmt_dur(Duration::from_secs(5)), "0:05");
+        assert_eq!(fmt_dur(Duration::from_secs(83)), "1：23");
+        assert_eq!(fmt_dur(Duration::from_secs(5)), "0：05");
         assert_eq!(fmt_opt_dur(None), "LIVE");
     }
 
@@ -418,11 +419,11 @@ mod tests {
         s.upcoming = vec![QueueItem { title: "Next".into(), duration: Some(Duration::from_secs(190)), request: "req2".into() }];
         let np = format_nowplaying(&s);
         assert!(np.contains("[b]Song[/b]"));
-        assert!(np.contains("1:23 / 4:05"));
+        assert!(np.contains("1：23 / 4：05"));
         assert!(np.contains("音量70"));
         let q = format_queue(&s);
-        assert!(q.contains("▶ [b]Song[/b] (4:05)"));
-        assert!(q.contains("1. Next (3:10)"));
+        assert!(q.contains("▶ [b]Song[/b] (4：05)"));
+        assert!(q.contains("1. Next (3：10)"));
     }
 
     #[tokio::test]
