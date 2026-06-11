@@ -44,8 +44,11 @@
 3. **source 泛化**：把现有 `spawn_ffmpeg` 泛化为接受 yt-dlp 子进程管道 / 直连 URL（ffmpeg 直拉）/ 本地路径三类输入，产出统一的 PCM 流交给 player 的编码段。
 4. **断线重连**：MVP 现为断线即 `Err` 退出。本阶段补一个轻量重连——检测到断线后按退避重连、保留/恢复队列状态，使机器人可常驻。
 
-### Phase 2 — 播放控制加厚
-**交付**：`!pause` / `!resume`、`!volume`、`!nowplaying`（标题/时长元数据）、`!loop`（单曲/队列）、`!remove <n>` / `!clear`。
+### Phase 2 — 播放控制加厚（拆为 2A / 2B）
+brainstorm 时因范围扩大拆分为两个各自聚焦的子项目：
+
+- **Phase 2A — 播放控制加厚**（spec: `2026-06-11-phase2a-design.md`）：`!help`、`!pause`/`!resume`、`!volume`(0-100)、`!loop`(off/track/queue)、`!nowplaying`(带进度)、`!queue`/`!remove`/`!clear`/`!skip`/`!stop`、`!shuffle`、批量 `!play`、元数据(标题/时长)。回复用 BBCode 轻美化。围绕当前队列/播放器的内聚单元。
+- **Phase 2B — 播放列表**：命名歌单的本地持久化（文件格式）+ 创建/保存/列出/查看/加载播放。独立存储子系统，2A 之后单独走 spec→plan。
 
 **范围**：source 增加元数据提取（yt-dlp/ffprobe 取标题、时长）；player 队列模型加厚（音量、循环、移除）。
 
