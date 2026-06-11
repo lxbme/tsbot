@@ -2680,6 +2680,7 @@ dependencies = [
  "tsbot-commands",
  "tsbot-config",
  "tsbot-player",
+ "tsbot-playlist",
  "tsbot-ts-connection",
 ]
 
@@ -2696,8 +2697,10 @@ dependencies = [
 name = "tsbot-commands"
 version = "0.1.0"
 dependencies = [
+ "tempfile",
  "tokio",
  "tsbot-player",
+ "tsbot-playlist",
  "tsbot-source",
  "tsbot-ts-connection",
 ]
@@ -2723,6 +2726,16 @@ dependencies = [
  "tsbot-audio",
  "tsbot-source",
  "tsbot-ts-connection",
+]
+
+[[package]]
+name = "tsbot-playlist"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]

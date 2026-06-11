@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use player::{LoopMode, PlayerHandle, Snapshot};
+use playlist::{Playlist, PlaylistItem, Store};
 use tokio::sync::mpsc;
 use ts_connection::ChatMessage;
 
@@ -20,6 +21,7 @@ pub enum Command {
     Volume(Option<String>),
     Loop(Option<String>),
     Remove(Option<String>),
+    Playlist(Vec<String>),
 }
 
 const HELP_TEXT: &str = "可用命令：\n\
@@ -29,7 +31,8 @@ const HELP_TEXT: &str = "可用命令：\n\
 !volume [0-100] 音量  !loop [off|track|queue] 循环\n\
 !nowplaying 当前曲目  !queue 队列\n\
 !remove <编号> 移除待播  !clear 清空待播  !shuffle 打乱\n\
-!help 帮助";
+!help 帮助\n\
+!playlist <save|create|add|remove|list|view|play|delete> 歌单";
 
 /// 去掉 TeamSpeak 自动给 URL 套的 BBCode 包裹（[URL]X[/URL] / [URL=X]label[/URL]）。
 fn strip_url_bbcode(s: &str) -> String {
@@ -75,6 +78,7 @@ pub fn parse(text: &str) -> Option<Command> {
         "volume" => Some(Command::Volume(opt(arg))),
         "loop" => Some(Command::Loop(opt(arg))),
         "remove" => Some(Command::Remove(opt(arg))),
+        "playlist" => Some(Command::Playlist(arg.split_whitespace().map(|s| s.to_string()).collect())),
         _ => None,
     }
 }
@@ -140,16 +144,17 @@ pub async fn run(
     mut chat_rx: mpsc::Receiver<ChatMessage>,
     handle: PlayerHandle,
     snapshot: Arc<Mutex<Snapshot>>,
+    store: Store,
     reply_tx: mpsc::Sender<String>,
 ) {
     while let Some(msg) = chat_rx.recv().await {
         let Some(cmd) = parse(&msg.text) else { continue };
-        let reply = handle_command(cmd, &handle, &snapshot).await;
+        let reply = handle_command(cmd, &handle, &snapshot, &store).await;
         let _ = reply_tx.send(reply).await;
     }
 }
 
-async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mutex<Snapshot>>) -> String {
+async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mutex<Snapshot>>, store: &Store) -> String {
     match cmd {
         Command::Play(items) => {
             let single = items.len() == 1;
@@ -232,6 +237,138 @@ async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mute
             }
             _ => "编号需为正整数".to_string(),
         },
+        Command::Playlist(tokens) => handle_playlist(&tokens, store, handle, snapshot).await,
+    }
+}
+
+fn playlist_from_snapshot(name: &str, s: &Snapshot) -> Playlist {
+    let mut items = Vec::new();
+    if let Some(np) = &s.now_playing {
+        items.push(PlaylistItem { request: np.request.clone(), title: np.title.clone() });
+    }
+    for q in &s.upcoming {
+        items.push(PlaylistItem { request: q.request.clone(), title: q.title.clone() });
+    }
+    Playlist { name: name.to_string(), items }
+}
+
+async fn handle_playlist(
+    tokens: &[String],
+    store: &Store,
+    handle: &PlayerHandle,
+    snapshot: &Arc<Mutex<Snapshot>>,
+) -> String {
+    let sub = tokens.first().map(|s| s.as_str()).unwrap_or("");
+    match sub {
+        "list" => match store.list() {
+            Ok(names) if names.is_empty() => "还没有歌单".to_string(),
+            Ok(names) => format!("歌单：{}", names.join("、")),
+            Err(e) => format!("出错：{e}"),
+        },
+        "save" => {
+            let Some(name) = tokens.get(1) else { return "用法：!playlist save <名>".to_string() };
+            let p = {
+                let s = snapshot.lock().unwrap();
+                playlist_from_snapshot(name, &s)
+            };
+            let n = p.items.len();
+            match store.save(&p) {
+                Ok(()) => format!("已保存歌单 [b]{name}[/b]（{n} 首）"),
+                Err(e) => format!("保存失败：{e}"),
+            }
+        }
+        "create" => {
+            let Some(name) = tokens.get(1) else { return "用法：!playlist create <名>".to_string() };
+            if store.load(name).is_ok() {
+                return format!("歌单 {name} 已存在");
+            }
+            let p = Playlist { name: name.to_string(), items: Vec::new() };
+            match store.save(&p) {
+                Ok(()) => format!("已创建空歌单 [b]{name}[/b]"),
+                Err(e) => format!("创建失败：{e}"),
+            }
+        }
+        "delete" => {
+            let Some(name) = tokens.get(1) else { return "用法：!playlist delete <名>".to_string() };
+            match store.delete(name) {
+                Ok(()) => format!("已删除歌单 [b]{name}[/b]"),
+                Err(e) => e.to_string(),
+            }
+        }
+        "view" => {
+            let Some(name) = tokens.get(1) else { return "用法：!playlist view <名>".to_string() };
+            match store.load(name) {
+                Ok(p) if p.items.is_empty() => format!("歌单 [b]{name}[/b] 为空"),
+                Ok(p) => {
+                    let mut out = format!("歌单 [b]{name}[/b]（{} 首）", p.items.len());
+                    for (i, it) in p.items.iter().enumerate() {
+                        out.push_str(&format!("\n{}. {}", i + 1, it.title));
+                    }
+                    out
+                }
+                Err(e) => e.to_string(),
+            }
+        }
+        "remove" => {
+            let (Some(name), Some(ns)) = (tokens.get(1), tokens.get(2)) else {
+                return "用法：!playlist remove <名> <编号>".to_string();
+            };
+            let Ok(n) = ns.parse::<usize>() else { return "编号需为正整数".to_string() };
+            let mut p = match store.load(name) {
+                Ok(p) => p,
+                Err(e) => return e.to_string(),
+            };
+            if n < 1 || n > p.items.len() {
+                return format!("歌单里没有第 {n} 首");
+            }
+            let removed = p.items.remove(n - 1);
+            match store.save(&p) {
+                Ok(()) => format!("已从 {name} 移除 [b]{}[/b]", removed.title),
+                Err(e) => format!("保存失败：{e}"),
+            }
+        }
+        "add" => {
+            let (Some(name), Some(raw)) = (tokens.get(1), tokens.get(2)) else {
+                return "用法：!playlist add <名> <url>".to_string();
+            };
+            let url = strip_url_bbcode(raw);
+            let title = match source::resolve(&url).await {
+                Ok(r) => r.title,
+                Err(e) => return format!("解析失败：{e}"),
+            };
+            let mut p = store
+                .load(name)
+                .unwrap_or_else(|_| Playlist { name: name.to_string(), items: Vec::new() });
+            p.items.push(PlaylistItem { request: url, title: title.clone() });
+            match store.save(&p) {
+                Ok(()) => format!("已加入 [b]{title}[/b] → 歌单 {name}"),
+                Err(e) => format!("保存失败：{e}"),
+            }
+        }
+        "play" => {
+            let Some(name) = tokens.get(1) else { return "用法：!playlist play <名>".to_string() };
+            let p = match store.load(name) {
+                Ok(p) => p,
+                Err(e) => return e.to_string(),
+            };
+            let mut ok = 0usize;
+            let mut fail = 0usize;
+            for it in &p.items {
+                match source::resolve(&it.request).await {
+                    Ok(r) => {
+                        handle.play(r);
+                        ok += 1;
+                    }
+                    Err(_) => fail += 1,
+                }
+            }
+            if fail > 0 {
+                format!("已加载歌单 [b]{name}[/b]（成功 {ok}，失败 {fail}）")
+            } else {
+                format!("已加载歌单 [b]{name}[/b]（{ok} 首）")
+            }
+        }
+        _ => "用法：!playlist <save|create|add|remove|list|view|play|delete>".to_string(),
     }
 }
 
@@ -276,8 +413,9 @@ mod tests {
             title: "Song".into(),
             elapsed: Duration::from_secs(83),
             duration: Some(Duration::from_secs(245)),
+            request: "req".into(),
         });
-        s.upcoming = vec![QueueItem { title: "Next".into(), duration: Some(Duration::from_secs(190)) }];
+        s.upcoming = vec![QueueItem { title: "Next".into(), duration: Some(Duration::from_secs(190)), request: "req2".into() }];
         let np = format_nowplaying(&s);
         assert!(np.contains("[b]Song[/b]"));
         assert!(np.contains("1:23 / 4:05"));
@@ -293,7 +431,9 @@ mod tests {
         drop(player);
         let (chat_tx, chat_rx) = mpsc::channel(8);
         let (reply_tx, mut reply_rx) = mpsc::channel(8);
-        let join = tokio::spawn(run(chat_rx, handle, snap, reply_tx));
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let join = tokio::spawn(run(chat_rx, handle, snap, store, reply_tx));
 
         let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1) });
 
@@ -310,5 +450,43 @@ mod tests {
 
         drop(chat_tx);
         let _ = join.await;
+    }
+
+    fn toks(s: &str) -> Vec<String> {
+        s.split_whitespace().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_playlist_tokens() {
+        assert!(matches!(parse("!playlist save mix"), Some(Command::Playlist(v)) if v == vec!["save","mix"]));
+        assert!(matches!(parse("!playlist"), Some(Command::Playlist(v)) if v.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn playlist_save_view_remove_delete() {
+        use player::{NowPlaying, Player, QueueItem};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let (player, handle, snap) = Player::new().unwrap();
+        drop(player);
+        {
+            let mut s = snap.lock().unwrap();
+            s.now_playing = Some(NowPlaying {
+                title: "Cur".into(),
+                elapsed: Duration::ZERO,
+                duration: None,
+                request: "req-cur".into(),
+            });
+            s.upcoming = vec![QueueItem { title: "Up".into(), duration: None, request: "req-up".into() }];
+        }
+        assert!(handle_playlist(&toks("save mix"), &store, &handle, &snap).await.contains("已保存"));
+        assert!(handle_playlist(&toks("list"), &store, &handle, &snap).await.contains("mix"));
+        let v = handle_playlist(&toks("view mix"), &store, &handle, &snap).await;
+        assert!(v.contains("1. Cur") && v.contains("2. Up"));
+        assert!(handle_playlist(&toks("remove mix 1"), &store, &handle, &snap).await.contains("Cur"));
+        assert!(handle_playlist(&toks("view mix"), &store, &handle, &snap).await.contains("1. Up"));
+        assert!(handle_playlist(&toks("delete mix"), &store, &handle, &snap).await.contains("已删除"));
+        assert!(handle_playlist(&toks("list"), &store, &handle, &snap).await.contains("还没有"));
+        assert!(handle_playlist(&toks("save a/b"), &store, &handle, &snap).await.contains("失败"));
     }
 }

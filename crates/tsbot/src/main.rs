@@ -30,10 +30,11 @@ async fn main() -> Result<()> {
     };
 
     let (mut player, handle, snapshot) = player::Player::new()?;
+    let store = playlist::Store::new(std::path::PathBuf::from(config.playlist.dir));
     let (chat_tx, chat_rx) = mpsc::channel(32);
     let (reply_tx, reply_rx) = mpsc::channel(32);
 
-    tokio::spawn(commands::run(chat_rx, handle, snapshot, reply_tx));
+    tokio::spawn(commands::run(chat_rx, handle, snapshot, store, reply_tx));
 
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;

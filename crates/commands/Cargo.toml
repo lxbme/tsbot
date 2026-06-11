@@ -10,4 +10,8 @@ name = "commands"
 tsbot-player = { path = "../player" }
 tsbot-source = { path = "../source" }
 tsbot-ts-connection = { path = "../ts-connection" }
+tsbot-playlist = { path = "../playlist" }
 tokio = { workspace = true, features = ["sync", "macros", "rt"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
