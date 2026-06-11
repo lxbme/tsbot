@@ -1,2 +1,4 @@
 /target
 /identity.toml
+# 本地测试音频，勿入库
+test.mp3
