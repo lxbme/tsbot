@@ -67,6 +67,7 @@ fn opus_music_packet(data: &[u8]) -> OutPacket {
 pub struct ChatMessage {
     pub text: String,
     pub invoker_id: ClientId,
+    pub invoker_uid: String,
 }
 
 /// 向机器人所在频道发送一条文本。
@@ -101,9 +102,12 @@ pub async fn run<S: OpusSource>(
                     if let Event::Message { target: MessageTarget::Channel, invoker, message } = e {
                         if invoker.id != own_id {
                             tracing::debug!(%message, "收到频道消息");
+                            let invoker_uid =
+                                invoker.uid.as_ref().map(|u| u.to_string()).unwrap_or_default();
                             let _ = chat_tx.try_send(ChatMessage {
                                 text: message.clone(),
                                 invoker_id: invoker.id,
+                                invoker_uid,
                             });
                         }
                     }

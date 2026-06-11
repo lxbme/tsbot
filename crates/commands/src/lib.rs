@@ -436,7 +436,7 @@ mod tests {
         let store = Store::new(dir.path().to_path_buf());
         let join = tokio::spawn(run(chat_rx, handle, snap, store, reply_tx));
 
-        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1) });
+        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1), invoker_uid: "u1".into() });
 
         send("!volume 500").await.unwrap();
         assert!(reply_rx.recv().await.unwrap().contains("0-100"));
