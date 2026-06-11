@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use perms::Permissions;
 use player::{LoopMode, PlayerHandle, Snapshot};
 use playlist::{Playlist, PlaylistItem, Store};
 use tokio::sync::mpsc;
@@ -18,6 +19,7 @@ pub enum Command {
     Clear,
     Shuffle,
     Help,
+    Whoami,
     Volume(Option<String>),
     Loop(Option<String>),
     Remove(Option<String>),
@@ -32,7 +34,8 @@ const HELP_TEXT: &str = "可用命令：\n\
 !nowplaying 当前曲目  !queue 队列\n\
 !remove <编号> 移除待播  !clear 清空待播  !shuffle 打乱\n\
 !help 帮助\n\
-!playlist <save|create|add|remove|list|view|play|delete> 歌单";
+!playlist <save|create|add|remove|list|view|play|delete> 歌单\n\
+!whoami 查看你的 uid";
 
 /// 去掉 TeamSpeak 自动给 URL 套的 BBCode 包裹（[URL]X[/URL] / [URL=X]label[/URL]）。
 fn strip_url_bbcode(s: &str) -> String {
@@ -75,11 +78,33 @@ pub fn parse(text: &str) -> Option<Command> {
         "clear" => Some(Command::Clear),
         "shuffle" => Some(Command::Shuffle),
         "help" => Some(Command::Help),
+        "whoami" => Some(Command::Whoami),
         "volume" => Some(Command::Volume(opt(arg))),
         "loop" => Some(Command::Loop(opt(arg))),
         "remove" => Some(Command::Remove(opt(arg))),
         "playlist" => Some(Command::Playlist(arg.split_whitespace().map(|s| s.to_string()).collect())),
         _ => None,
+    }
+}
+
+/// 指令 → 权限键名。
+fn command_name(cmd: &Command) -> &'static str {
+    match cmd {
+        Command::Play(_) => "play",
+        Command::Skip => "skip",
+        Command::Stop => "stop",
+        Command::Pause => "pause",
+        Command::Resume => "resume",
+        Command::NowPlaying => "nowplaying",
+        Command::Queue => "queue",
+        Command::Clear => "clear",
+        Command::Shuffle => "shuffle",
+        Command::Help => "help",
+        Command::Whoami => "whoami",
+        Command::Volume(_) => "volume",
+        Command::Loop(_) => "loop",
+        Command::Remove(_) => "remove",
+        Command::Playlist(_) => "playlist",
     }
 }
 
@@ -146,16 +171,24 @@ pub async fn run(
     handle: PlayerHandle,
     snapshot: Arc<Mutex<Snapshot>>,
     store: Store,
+    perms: Permissions,
     reply_tx: mpsc::Sender<String>,
 ) {
     while let Some(msg) = chat_rx.recv().await {
         let Some(cmd) = parse(&msg.text) else { continue };
-        let reply = handle_command(cmd, &handle, &snapshot, &store).await;
+        let name = command_name(&cmd);
+        if name != "help" && name != "whoami" && !perms.allows(&msg.invoker_uid, name) {
+            let _ = reply_tx
+                .send(format!("⛔ 无权限：{name}（你的角色：{}）", perms.role_of(&msg.invoker_uid)))
+                .await;
+            continue;
+        }
+        let reply = handle_command(cmd, &handle, &snapshot, &store, &msg.invoker_uid).await;
         let _ = reply_tx.send(reply).await;
     }
 }
 
-async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mutex<Snapshot>>, store: &Store) -> String {
+async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mutex<Snapshot>>, store: &Store, uid: &str) -> String {
     match cmd {
         Command::Play(items) => {
             let single = items.len() == 1;
@@ -239,6 +272,7 @@ async fn handle_command(cmd: Command, handle: &PlayerHandle, snapshot: &Arc<Mute
             _ => "编号需为正整数".to_string(),
         },
         Command::Playlist(tokens) => handle_playlist(&tokens, store, handle, snapshot).await,
+        Command::Whoami => format!("你的 uid：[b]{uid}[/b]"),
     }
 }
 
@@ -434,9 +468,9 @@ mod tests {
         let (reply_tx, mut reply_rx) = mpsc::channel(8);
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path().to_path_buf());
-        let join = tokio::spawn(run(chat_rx, handle, snap, store, reply_tx));
+        let join = tokio::spawn(run(chat_rx, handle, snap, store, perms::Permissions::default(), reply_tx));
 
-        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1) });
+        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1), invoker_uid: "u1".into() });
 
         send("!volume 500").await.unwrap();
         assert!(reply_rx.recv().await.unwrap().contains("0-100"));
@@ -448,6 +482,46 @@ mod tests {
         assert!(reply_rx.recv().await.unwrap().contains("没有第 5 首"));
         send("!help").await.unwrap();
         assert!(reply_rx.recv().await.unwrap().contains("!play"));
+
+        drop(chat_tx);
+        let _ = join.await;
+    }
+
+    #[test]
+    fn command_name_maps() {
+        assert_eq!(command_name(&Command::Play(vec![])), "play");
+        assert_eq!(command_name(&Command::Whoami), "whoami");
+        assert_eq!(command_name(&Command::Playlist(vec![])), "playlist");
+        assert_eq!(command_name(&Command::Stop), "stop");
+    }
+
+    #[tokio::test]
+    async fn run_enforces_permissions() {
+        use std::collections::HashMap;
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let (player, handle, snap) = player::Player::new().unwrap();
+        drop(player);
+        let mut roles = HashMap::new();
+        roles.insert("guest".to_string(), vec!["queue".to_string()]);
+        let perms = Permissions { default_role: "guest".to_string(), roles, users: HashMap::new() };
+        let (chat_tx, chat_rx) = mpsc::channel(8);
+        let (reply_tx, mut reply_rx) = mpsc::channel(8);
+        let join = tokio::spawn(run(chat_rx, handle, snap, store, perms, reply_tx));
+        let send = |t: &str| chat_tx.send(ChatMessage {
+            text: t.into(),
+            invoker_id: ts_connection::ClientId(1),
+            invoker_uid: "u1".into(),
+        });
+
+        send("!stop").await.unwrap();
+        assert!(reply_rx.recv().await.unwrap().contains("无权限"));
+        send("!queue").await.unwrap();
+        assert!(reply_rx.recv().await.unwrap().contains("没有播放"));
+        send("!help").await.unwrap();
+        assert!(reply_rx.recv().await.unwrap().contains("!play"));
+        send("!whoami").await.unwrap();
+        assert!(reply_rx.recv().await.unwrap().contains("u1"));
 
         drop(chat_tx);
         let _ = join.await;

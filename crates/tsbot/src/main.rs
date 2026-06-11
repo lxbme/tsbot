@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     let (chat_tx, chat_rx) = mpsc::channel(32);
     let (reply_tx, reply_rx) = mpsc::channel(32);
 
-    tokio::spawn(commands::run(chat_rx, handle, snapshot, store, reply_tx));
+    tokio::spawn(commands::run(chat_rx, handle, snapshot, store, config.permissions, reply_tx));
 
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;

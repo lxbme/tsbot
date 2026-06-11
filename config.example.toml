@@ -9,3 +9,15 @@ identity_path = "identity.toml"
 
 [playlist]
 dir = "playlists"       # 歌单 TOML 存放目录（默认 playlists）
+
+# 权限（可选）：删除整个 [permissions] 段 = 关闭权限（任何人可用所有命令）
+[permissions]
+default_role = "guest"          # 陌生用户角色
+
+[permissions.roles]
+admin = ["*"]
+dj    = ["play", "skip", "pause", "resume", "volume", "loop", "shuffle", "remove", "clear", "stop", "playlist"]
+guest = ["play", "queue", "nowplaying"]
+
+[permissions.users]
+# "你的uid（用 !whoami 获取）" = "admin"

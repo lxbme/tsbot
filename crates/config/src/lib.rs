@@ -9,6 +9,8 @@ pub struct Config {
     pub bot: Bot,
     #[serde(default)]
     pub playlist: PlaylistCfg,
+    #[serde(default)]
+    pub permissions: perms::Permissions,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,5 +110,15 @@ identity_path = "identity.toml"
             "[server]\naddress = \"x\"\n[bot]\nname = \"b\"\nidentity_path = \"i\"\n[playlist]\ndir = \"/tmp/pl\"\n",
         );
         assert_eq!(load(&p2).unwrap().playlist.dir, "/tmp/pl");
+    }
+
+    #[test]
+    fn permissions_default_empty_means_disabled() {
+        let (_d, p) = write_tmp(
+            "[server]\naddress = \"x\"\n[bot]\nname = \"b\"\nidentity_path = \"i\"\n",
+        );
+        let c = load(&p).unwrap();
+        assert!(c.permissions.roles.is_empty());
+        assert!(c.permissions.allows("anyone", "stop")); // 空 = 全开
     }
 }
