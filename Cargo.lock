@@ -2679,6 +2679,7 @@ dependencies = [
  "tracing-subscriber",
  "tsbot-commands",
  "tsbot-config",
+ "tsbot-perms",
  "tsbot-player",
  "tsbot-playlist",
  "tsbot-ts-connection",
@@ -2699,6 +2700,7 @@ version = "0.1.0"
 dependencies = [
  "tempfile",
  "tokio",
+ "tsbot-perms",
  "tsbot-player",
  "tsbot-playlist",
  "tsbot-source",
@@ -2713,6 +2715,7 @@ dependencies = [
  "serde",
  "tempfile",
  "toml 0.8.23",
+ "tsbot-perms",
 ]
 
 [[package]]
