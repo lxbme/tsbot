@@ -4,8 +4,12 @@ use anyhow::Result;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 
-/// 一帧 = 48000 / 50 = 960 个 f32 样本（48kHz 单声道 20ms）。
-pub const FRAME_SAMPLES: usize = 960;
+/// 声道数：立体声（保留音乐的立体声宽度，避免单声道下混抵消高频）。
+pub const CHANNELS: usize = 2;
+/// 每声道每帧样本数 = 48000 / 50 = 960（48kHz、20ms）。
+const SAMPLES_PER_CHANNEL: usize = 960;
+/// 每帧交错样本总数（L,R,L,R… 交错）= 1920。
+pub const FRAME_SAMPLES: usize = SAMPLES_PER_CHANNEL * CHANNELS;
 const FRAME_BYTES: usize = FRAME_SAMPLES * 4; // f32le = 4 字节/样本
 
 /// 从任意字节流按固定 20ms 帧读取 f32 样本。最后一帧不足时用静音(0.0)补齐。
@@ -48,14 +52,14 @@ impl<R: AsyncRead + Unpin> PcmFrameReader<R> {
     }
 }
 
-/// 启动 ffmpeg 把输入解码为 48kHz/单声道/f32le 裸 PCM，返回子进程与其 stdout。
+/// 启动 ffmpeg 把输入解码为 48kHz/立体声/f32le 裸 PCM（L,R 交错），返回子进程与其 stdout。
 /// 输入可为本地路径或 URL（ffmpeg `-i` 通用）。子进程在 drop 时被杀。
 pub fn spawn_ffmpeg(input: &str) -> Result<(Child, tokio::process::ChildStdout)> {
     let mut child = Command::new("ffmpeg")
         .args([
             "-hide_banner", "-loglevel", "error",
             "-i", input,
-            "-ac", "1", "-ar", "48000", "-f", "f32le", "-",
+            "-ac", "2", "-ar", "48000", "-f", "f32le", "-",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
