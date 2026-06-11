@@ -1,6 +1,12 @@
 # tsbot
 
+[![CI](https://github.com/lxbme/tsbot/actions/workflows/ci.yml/badge.svg)](https://github.com/lxbme/tsbot/actions/workflows/ci.yml)
+
 一个用 Rust 编写的 TeamSpeak3 音乐机器人。以完整客户端身份接入 TS3 服务器，通过频道聊天指令点播，把音频实时编码为 Opus 推送到频道。
+
+## 下载
+
+预编译二进制见 [Releases](https://github.com/lxbme/tsbot/releases)（Linux x86_64 / Windows x86_64）。下载后准备 `config.toml`（参考随附的 `config.example.toml`），并确保 `ffmpeg`、`yt-dlp` 在 PATH 中即可运行。
 
 ## 功能
 
