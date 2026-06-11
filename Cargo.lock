@@ -2716,6 +2716,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tsbot-perms"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "tsbot-player"
 version = "0.1.0"
 dependencies = [
