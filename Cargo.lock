@@ -2636,12 +2636,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "futures",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "tsbot-audio",
+ "tsbot-commands",
  "tsbot-config",
+ "tsbot-player",
  "tsbot-ts-connection",
 ]
 
@@ -2655,6 +2655,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tsbot-commands"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tsbot-player",
+ "tsbot-source",
+ "tsbot-ts-connection",
+]
+
+[[package]]
 name = "tsbot-config"
 version = "0.1.0"
 dependencies = [
@@ -2662,6 +2672,27 @@ dependencies = [
  "serde",
  "tempfile",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "tsbot-player"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
+ "tracing",
+ "tsbot-audio",
+ "tsbot-source",
+ "tsbot-ts-connection",
+]
+
+[[package]]
+name = "tsbot-source"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -2673,6 +2704,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml 0.8.23",
+ "tracing",
  "tsclientlib",
  "tsproto-packets",
 ]
