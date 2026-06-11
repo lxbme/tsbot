@@ -7,6 +7,24 @@ use serde::Deserialize;
 pub struct Config {
     pub server: Server,
     pub bot: Bot,
+    #[serde(default)]
+    pub playlist: PlaylistCfg,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaylistCfg {
+    #[serde(default = "default_playlist_dir")]
+    pub dir: String,
+}
+
+impl Default for PlaylistCfg {
+    fn default() -> Self {
+        Self { dir: default_playlist_dir() }
+    }
+}
+
+fn default_playlist_dir() -> String {
+    "playlists".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,5 +95,18 @@ identity_path = "identity.toml"
         assert!(c.server.password.is_none());
         assert!(c.server.channel.is_none());
         assert_eq!(c.server.address, "localhost");
+    }
+
+    #[test]
+    fn playlist_dir_defaults_and_override() {
+        let (_d, p) = write_tmp(
+            "[server]\naddress = \"x\"\n[bot]\nname = \"b\"\nidentity_path = \"i\"\n",
+        );
+        assert_eq!(load(&p).unwrap().playlist.dir, "playlists");
+
+        let (_d2, p2) = write_tmp(
+            "[server]\naddress = \"x\"\n[bot]\nname = \"b\"\nidentity_path = \"i\"\n[playlist]\ndir = \"/tmp/pl\"\n",
+        );
+        assert_eq!(load(&p2).unwrap().playlist.dir, "/tmp/pl");
     }
 }

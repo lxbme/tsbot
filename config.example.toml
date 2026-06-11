@@ -6,3 +6,6 @@ channel  = "Lobby"      # 可选；不指定则留在默认频道
 [bot]
 name          = "tsbot"
 identity_path = "identity.toml"
+
+[playlist]
+dir = "playlists"       # 歌单 TOML 存放目录（默认 playlists）
