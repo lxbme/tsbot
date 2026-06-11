@@ -276,8 +276,9 @@ mod tests {
             title: "Song".into(),
             elapsed: Duration::from_secs(83),
             duration: Some(Duration::from_secs(245)),
+            request: "req".into(),
         });
-        s.upcoming = vec![QueueItem { title: "Next".into(), duration: Some(Duration::from_secs(190)) }];
+        s.upcoming = vec![QueueItem { title: "Next".into(), duration: Some(Duration::from_secs(190)), request: "req2".into() }];
         let np = format_nowplaying(&s);
         assert!(np.contains("[b]Song[/b]"));
         assert!(np.contains("1:23 / 4:05"));

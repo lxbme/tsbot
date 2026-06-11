@@ -10,18 +10,19 @@ pub struct Resolved {
     pub input: String,
     pub title: String,
     pub duration: Option<Duration>,
+    pub request: String,
 }
 
 /// 解析用户参数为可播条目（含元数据）。
 pub async fn resolve(arg: &str) -> Result<Resolved> {
     if Path::new(arg).is_file() {
         let (title, duration) = ffprobe_meta(arg).await;
-        return Ok(Resolved { input: arg.to_string(), title, duration });
+        return Ok(Resolved { input: arg.to_string(), title, duration, request: arg.to_string() });
     }
     if arg.starts_with("http://") || arg.starts_with("https://") {
         return match ytdlp_meta(arg).await {
             Ok(r) => Ok(r),
-            Err(_) => Ok(Resolved { input: arg.to_string(), title: arg.to_string(), duration: None }),
+            Err(_) => Ok(Resolved { input: arg.to_string(), title: arg.to_string(), duration: None, request: arg.to_string() }),
         };
     }
     bail!("无法识别的音源: {arg}（需为存在的本地文件或 http(s) URL）")
@@ -54,7 +55,7 @@ async fn ytdlp_meta(url: &str) -> Result<Resolved> {
     }
     let duration = dur.parse::<u64>().ok().map(Duration::from_secs);
     let title = if title.is_empty() { url.to_string() } else { title };
-    Ok(Resolved { input, title, duration })
+    Ok(Resolved { input, title, duration, request: url.to_string() })
 }
 
 /// ffprobe 取本地文件 时长 + 标题标签；失败回退文件名。

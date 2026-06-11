@@ -62,12 +62,14 @@ pub struct NowPlaying {
     pub title: String,
     pub elapsed: Duration,
     pub duration: Option<Duration>,
+    pub request: String,
 }
 
 #[derive(Clone)]
 pub struct QueueItem {
     pub title: String,
     pub duration: Option<Duration>,
+    pub request: String,
 }
 
 /// 供查询命令只读的播放快照。
@@ -151,11 +153,12 @@ impl Player {
             title: c.resolved.title.clone(),
             elapsed: Duration::from_millis(c.played_frames * FRAME_MS),
             duration: c.resolved.duration,
+            request: c.resolved.request.clone(),
         });
         s.upcoming = self
             .queue
             .iter()
-            .map(|r| QueueItem { title: r.title.clone(), duration: r.duration })
+            .map(|r| QueueItem { title: r.title.clone(), duration: r.duration, request: r.request.clone() })
             .collect();
         s.volume = self.volume;
         s.loop_mode = self.loop_mode;
@@ -254,7 +257,7 @@ mod tests {
     use super::*;
 
     fn res(title: &str) -> Resolved {
-        Resolved { input: format!("/nonexistent/{title}"), title: title.to_string(), duration: None }
+        Resolved { input: format!("/nonexistent/{title}"), title: title.to_string(), duration: None, request: title.to_string() }
     }
 
     #[tokio::test]
