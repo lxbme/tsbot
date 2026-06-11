@@ -2665,6 +2665,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tsbot-player"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tokio",
+ "tracing",
+ "tsbot-audio",
+ "tsbot-source",
+ "tsbot-ts-connection",
+]
+
+[[package]]
 name = "tsbot-source"
 version = "0.1.0"
 dependencies = [

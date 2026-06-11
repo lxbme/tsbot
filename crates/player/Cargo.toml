@@ -1,0 +1,15 @@
+[package]
+name = "tsbot-player"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "player"
+
+[dependencies]
+tsbot-source = { path = "../source" }
+tsbot-audio = { path = "../audio" }
+tsbot-ts-connection = { path = "../ts-connection" }
+tokio = { workspace = true, features = ["sync", "process", "macros", "rt"] }
+anyhow = { workspace = true }
+tracing = { workspace = true }

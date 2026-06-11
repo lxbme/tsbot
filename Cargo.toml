@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/config", "crates/audio", "crates/ts-connection", "crates/source", "crates/tsbot"]
+members = ["crates/config", "crates/audio", "crates/ts-connection", "crates/source", "crates/player", "crates/tsbot"]
 
 [workspace.dependencies]
 tsclientlib = "0.2"
