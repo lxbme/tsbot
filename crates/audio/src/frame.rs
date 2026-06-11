@@ -48,16 +48,18 @@ impl<R: AsyncRead + Unpin> PcmFrameReader<R> {
     }
 }
 
-/// 启动 ffmpeg 把文件解码为 48kHz/单声道/f32le 裸 PCM，返回子进程与其 stdout。
-pub fn spawn_ffmpeg(file: &str) -> Result<(Child, impl AsyncRead + Unpin)> {
+/// 启动 ffmpeg 把输入解码为 48kHz/单声道/f32le 裸 PCM，返回子进程与其 stdout。
+/// 输入可为本地路径或 URL（ffmpeg `-i` 通用）。子进程在 drop 时被杀。
+pub fn spawn_ffmpeg(input: &str) -> Result<(Child, tokio::process::ChildStdout)> {
     let mut child = Command::new("ffmpeg")
         .args([
             "-hide_banner", "-loglevel", "error",
-            "-i", file,
+            "-i", input,
             "-ac", "1", "-ar", "48000", "-f", "f32le", "-",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
     let stdout = child.stdout.take().expect("stdout piped");
     Ok((child, stdout))
