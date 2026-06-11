@@ -100,6 +100,7 @@ pub async fn run<S: OpusSource>(
                 for e in evs {
                     if let Event::Message { target: MessageTarget::Channel, invoker, message } = e {
                         if invoker.id != own_id {
+                            tracing::debug!(%message, "收到频道消息");
                             let _ = chat_tx.try_send(ChatMessage {
                                 text: message.clone(),
                                 invoker_id: invoker.id,
