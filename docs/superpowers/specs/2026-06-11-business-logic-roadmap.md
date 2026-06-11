@@ -11,7 +11,7 @@
 
 ## 控制面与音源（讨论结论）
 
-- **控制面**：① 频道聊天指令（主）② 私聊 / poke 指令 ③ Web/HTTP 控制面板（后期）。不做启动自动播放。
+- **控制面**：① 频道聊天指令（主）② 私聊 / poke 指令。（原 ③ Web/HTTP 控制面板已取消。）不做启动自动播放。
 - **音源**：① yt-dlp 站点（YouTube 等）② 直连流 / 电台 URL ③ 本地文件/目录。**不做关键词搜索**（按 URL/路径点播）。
 - **权限**：角色 + 每指令权限位，用户（TS3 uid）→ 角色映射，与 TS3 服务器组解耦。
 - **起点形态**：薄的端到端切片优先，逐层加厚。
@@ -24,7 +24,7 @@
 | `crates/player` | 队列 + 播放引擎，**实现 `ts_connection::OpusSource`**。管理当前曲目与待播队列，处理 skip/stop/pause/volume/loop | Phase 1 |
 | `crates/commands` | 指令解析 + 路由 + 权限门禁；监听 TS3 事件流，把文本消息/poke 转为指令 | Phase 1 |
 | `crates/perms` | 角色与每指令权限位、用户→角色映射，在指令分发层做门禁 | Phase 3 |
-| `crates/web` | HTTP API + 最小控制面板，鉴权复用 perms | Phase 5 |
+| ~~`crates/web`~~ | ~~HTTP API + 最小控制面板~~ | Phase 5（已取消） |
 
 依赖方向保持单向无环：bin → {business crates} → {audio, ts-connection, config}；business crates 之间，player/commands 依赖 source，commands 依赖 player + perms。
 
@@ -60,8 +60,8 @@ brainstorm 时因范围扩大拆分为两个各自聚焦的子项目：
 ### Phase 4 — 私聊 / poke 指令面
 **交付**：扩展事件监听处理私聊文本消息与 poke，复用同一套指令解析器 + 权限门禁，作为频道指令之外的第二输入通道。
 
-### Phase 5 — Web/HTTP 控制面板
-**交付**：axum HTTP API 暴露队列/播放状态与控制端点，外加最小网页面板；鉴权接 perms。范围最大、置于最后。
+### ~~Phase 5 — Web/HTTP 控制面板~~（已取消，2026-06-11）
+原计划：axum HTTP API + 最小网页面板，鉴权接 perms。**已从 roadmap 移除**，暂不实现。
 
 ## 明确不做（范围之外）
 - 关键词搜索（按 URL/路径点播）
@@ -69,5 +69,7 @@ brainstorm 时因范围扩大拆分为两个各自聚焦的子项目：
 - 队列重启持久化
 - 多服务器 / 多实例
 
-## 下一步
-从 **Phase 1** 开始，对其单独走 brainstorm → spec → plan → 实现。建议进一步拆为可独立验证的纵切子步骤（先 source 单点解析，再 player 单曲播放，再接 commands 与重连）——具体在 Phase 1 的 brainstorm 中细化。
+## 进度（2026-06-11）
+Phase **0 / 1 / 2A / 2B / 3 / 4 均已完成并合并入 `main`**。Phase 5（Web 面板）**已取消**。
+
+roadmap 范围内功能至此完成。后续如有新需求，再各自走 brainstorm → spec → plan → 实现。
