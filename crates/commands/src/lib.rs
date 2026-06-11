@@ -1,4 +1,8 @@
-use player::Snapshot;
+use std::sync::{Arc, Mutex};
+
+use player::{PlayerHandle, Snapshot};
+use tokio::sync::mpsc;
+use ts_connection::ChatMessage;
 
 /// 解析后的指令。
 pub enum Command {
@@ -38,6 +42,35 @@ pub fn format_queue(s: &Snapshot) -> String {
         }
     }
     out
+}
+
+/// 指令处理循环：读 chat_rx → parse → 执行 → 经 reply_tx 回复。不接触 con。
+pub async fn run(
+    mut chat_rx: mpsc::Receiver<ChatMessage>,
+    handle: PlayerHandle,
+    snapshot: Arc<Mutex<Snapshot>>,
+    reply_tx: mpsc::Sender<String>,
+) {
+    while let Some(msg) = chat_rx.recv().await {
+        let Some(cmd) = parse(&msg.text) else { continue };
+        let reply = match cmd {
+            Command::Play(arg) => match source::resolve(&arg).await {
+                Ok(r) => {
+                    let label = r.label.clone();
+                    handle.play(r);
+                    format!("已添加: {label}")
+                }
+                Err(e) => format!("解析失败: {e}"),
+            },
+            Command::Skip => { handle.skip(); "已跳过".to_string() }
+            Command::Stop => { handle.stop(); "已停止并清空队列".to_string() }
+            Command::Queue => {
+                let snap = snapshot.lock().unwrap().clone();
+                format_queue(&snap)
+            }
+        };
+        let _ = reply_tx.send(reply).await;
+    }
 }
 
 #[cfg(test)]
@@ -80,5 +113,26 @@ mod tests {
         let s = format_queue(&filled);
         assert!(s.contains("正在播放: A"));
         assert!(s.contains("1. B"));
+    }
+
+    #[tokio::test]
+    async fn run_dispatches_skip_and_queue() {
+        use player::Player;
+
+        let (player, handle, snap) = Player::new().unwrap();
+        drop(player); // 本测试只验证句柄与回复，不驱动 player
+        let (chat_tx, chat_rx) = mpsc::channel(8);
+        let (reply_tx, mut reply_rx) = mpsc::channel(8);
+        let join = tokio::spawn(run(chat_rx, handle, snap, reply_tx));
+
+        chat_tx.send(ChatMessage { text: "!queue".into(), invoker_id: ts_connection::ClientId(1) }).await.unwrap();
+        let r = reply_rx.recv().await.unwrap();
+        assert!(r.contains("没有播放"));
+
+        chat_tx.send(ChatMessage { text: "!skip".into(), invoker_id: ts_connection::ClientId(1) }).await.unwrap();
+        assert_eq!(reply_rx.recv().await.unwrap(), "已跳过");
+
+        drop(chat_tx);
+        let _ = join.await;
     }
 }

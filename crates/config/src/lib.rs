@@ -7,7 +7,6 @@ use serde::Deserialize;
 pub struct Config {
     pub server: Server,
     pub bot: Bot,
-    pub playback: Playback,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,11 +20,6 @@ pub struct Server {
 pub struct Bot {
     pub name: String,
     pub identity_path: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Playback {
-    pub file: String,
 }
 
 /// 读取并解析 TOML 配置文件。
@@ -57,9 +51,6 @@ channel = "Lobby"
 [bot]
 name = "tsbot"
 identity_path = "identity.toml"
-
-[playback]
-file = "test.mp3"
 "#,
         );
         let c = load(&path).unwrap();
@@ -68,7 +59,6 @@ file = "test.mp3"
         assert_eq!(c.server.channel.as_deref(), Some("Lobby"));
         assert_eq!(c.bot.name, "tsbot");
         assert_eq!(c.bot.identity_path, "identity.toml");
-        assert_eq!(c.playback.file, "test.mp3");
     }
 
     #[test]
@@ -81,9 +71,6 @@ address = "localhost"
 [bot]
 name = "tsbot"
 identity_path = "identity.toml"
-
-[playback]
-file = "a.mp3"
 "#,
         );
         let c = load(&path).unwrap();
