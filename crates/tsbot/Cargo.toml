@@ -1,0 +1,15 @@
+[package]
+name = "tsbot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tsbot-config = { path = "../config" }
+tsbot-audio = { path = "../audio" }
+tsbot-ts-connection = { path = "../ts-connection" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "io-util"] }
+futures = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
