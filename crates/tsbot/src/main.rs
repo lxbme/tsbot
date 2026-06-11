@@ -1,17 +1,36 @@
 mod config;
-mod identity_store;
 
 use std::path::Path;
-use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use futures::prelude::*;
-use tsclientlib::{Connection, DisconnectOptions, StreamItem};
-use tsproto_packets::packets::{AudioData, CodecType, OutAudio};
+use tokio::io::AsyncRead;
+use ts_connection::{ConnectSettings, DisconnectOptions, OpusSource};
+use tsbot_audio::{spawn_ffmpeg, OpusMusicEncoder, PcmFrameReader};
 
 use config::Args;
-use tsbot_audio::{spawn_ffmpeg, OpusMusicEncoder, PcmFrameReader};
+
+/// 把 ffmpeg 解出的 PCM 经分帧 + Opus 编码，作为 stream_audio 的拉取源。
+struct FileOpusSource<R> {
+    reader: PcmFrameReader<R>,
+    encoder: OpusMusicEncoder,
+}
+
+impl<R> FileOpusSource<R> {
+    fn new(reader: PcmFrameReader<R>, encoder: OpusMusicEncoder) -> Self {
+        Self { reader, encoder }
+    }
+}
+
+impl<R: AsyncRead + Unpin> OpusSource for FileOpusSource<R> {
+    async fn next_frame(&mut self) -> Result<Option<Vec<u8>>> {
+        match self.reader.next_frame().await? {
+            Some(frame) => Ok(Some(self.encoder.encode(&frame)?.to_vec())),
+            None => Ok(None),
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,65 +38,53 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // 1. identity（生成或复用）
-    let identity = identity_store::load_or_create(Path::new(&args.identity))?;
+    let identity = ts_connection::identity::load_or_create(Path::new(&args.identity))?;
 
-    // 2. 构建连接配置
-    let mut cfg = Connection::build(args.address.clone())
-        .identity(identity)
-        .name("tsbot".to_string());
-    if let Some(pw) = &args.password {
-        cfg = cfg.password(pw.clone());
-    }
-    if let Some(ch) = &args.channel {
-        cfg = cfg.channel(ch.clone());
-    }
-
-    // 3. 连接并等待 book 就绪
-    let mut con = cfg.connect()?;
-    let r = con
-        .events()
-        .try_filter(|e| future::ready(matches!(e, StreamItem::BookEvents(_))))
-        .next()
-        .await;
-    if let Some(r) = r {
-        r?;
-    }
+    // 2. 连接并等待就绪
+    let settings = ConnectSettings {
+        address: args.address.clone(),
+        password: args.password.clone(),
+        channel: args.channel.clone(),
+        name: "tsbot".to_string(),
+        identity,
+    };
+    let mut con = ts_connection::connect(settings)?;
+    ts_connection::wait_until_ready(&mut con).await?;
     tracing::info!("connected, start streaming {}", args.file);
 
-    // 4. 启动 ffmpeg + 编码器 + 20ms 定时器
+    // 3. ffmpeg 源 + 编码器 → FileOpusSource
     let (mut child, stdout) = spawn_ffmpeg(&args.file)?;
-    let mut reader = PcmFrameReader::new(stdout);
-    let mut encoder = OpusMusicEncoder::new()?;
-    let mut interval = tokio::time::interval(Duration::from_millis(20));
+    let mut source = FileOpusSource::new(PcmFrameReader::new(stdout), OpusMusicEncoder::new()?);
 
-    // 5. 播放循环：每 20ms 发一帧
-    loop {
-        let events = con.events().try_for_each(|_| future::ready(Ok(())));
-        tokio::select! {
-            _ = interval.tick() => {}
-            _ = tokio::signal::ctrl_c() => break,
-            r = events => { r?; bail!("Disconnected"); }
-        }
-
-        match reader.next_frame().await? {
-            Some(frame) => {
-                let data = encoder.encode(&frame)?;
-                let packet = OutAudio::new(&AudioData::C2S {
-                    id: 0,
-                    codec: CodecType::OpusMusic,
-                    data,
-                });
-                con.send_audio(packet)?;
-            }
-            None => break, // 文件播完
-        }
+    // 4. 驱动发送，ctrl_c 可中断
+    tokio::select! {
+        r = ts_connection::stream_audio(&mut con, &mut source) => r?,
+        _ = tokio::signal::ctrl_c() => {}
     }
 
-    // 6. 发空音频包表示停止说话，断开
-    let stop = OutAudio::new(&AudioData::C2S { id: 0, codec: CodecType::OpusMusic, data: &[] });
-    let _ = con.send_audio(stop);
+    // 5. 清理并断开
     let _ = child.kill().await;
     con.disconnect(DisconnectOptions::new())?;
     con.events().for_each(|_| future::ready(())).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use tsbot_audio::FRAME_SAMPLES;
+
+    #[tokio::test]
+    async fn file_source_yields_opus_then_none() {
+        // 一帧静音的 PCM（960 f32 = 3840 字节）
+        let pcm = vec![0u8; FRAME_SAMPLES * 4];
+        let reader = PcmFrameReader::new(Cursor::new(pcm));
+        let mut src = FileOpusSource::new(reader, OpusMusicEncoder::new().unwrap());
+
+        let first = src.next_frame().await.unwrap();
+        assert!(first.is_some());
+        assert!(!first.unwrap().is_empty());
+        assert!(src.next_frame().await.unwrap().is_none());
+    }
 }

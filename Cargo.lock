@@ -2639,12 +2639,10 @@ dependencies = [
  "futures",
  "tempfile",
  "tokio",
- "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
  "tsbot-audio",
- "tsclientlib",
- "tsproto-packets",
+ "tsbot-ts-connection",
 ]
 
 [[package]]
@@ -2654,6 +2652,19 @@ dependencies = [
  "anyhow",
  "audiopus",
  "tokio",
+]
+
+[[package]]
+name = "tsbot-ts-connection"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "tempfile",
+ "tokio",
+ "toml 0.8.23",
+ "tsclientlib",
+ "tsproto-packets",
 ]
 
 [[package]]
