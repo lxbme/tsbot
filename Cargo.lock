@@ -2637,11 +2637,11 @@ dependencies = [
  "anyhow",
  "clap",
  "futures",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "tsbot-audio",
+ "tsbot-config",
  "tsbot-ts-connection",
 ]
 

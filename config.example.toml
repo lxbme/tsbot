@@ -1,0 +1,11 @@
+[server]
+address  = "ts.example.com:9987"
+password = "secret"     # 可选；无密码服务器删除此行
+channel  = "Lobby"      # 可选；不指定则留在默认频道
+
+[bot]
+name          = "tsbot"
+identity_path = "identity.toml"
+
+[playback]
+file = "test.mp3"       # 连上后播放此文件，播完退出

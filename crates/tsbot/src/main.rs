@@ -1,6 +1,4 @@
-mod config;
-
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::Parser;
@@ -9,7 +7,14 @@ use tokio::io::AsyncRead;
 use ts_connection::{ConnectSettings, DisconnectOptions, OpusSource};
 use tsbot_audio::{spawn_ffmpeg, OpusMusicEncoder, PcmFrameReader};
 
-use config::Args;
+/// 命令行参数：仅保留配置文件路径。
+#[derive(Parser, Debug)]
+#[command(about = "TS3 musicbot")]
+struct Args {
+    /// TOML 配置文件路径
+    #[arg(short, long, default_value = "config.toml")]
+    config: PathBuf,
+}
 
 /// 把 ffmpeg 解出的 PCM 经分帧 + Opus 编码，作为 stream_audio 的拉取源。
 struct FileOpusSource<R> {
@@ -36,24 +41,25 @@ impl<R: AsyncRead + Unpin> OpusSource for FileOpusSource<R> {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
+    let config = tsbot_config::load(&args.config)?;
 
     // 1. identity（生成或复用）
-    let identity = ts_connection::identity::load_or_create(Path::new(&args.identity))?;
+    let identity = ts_connection::identity::load_or_create(Path::new(&config.bot.identity_path))?;
 
     // 2. 连接并等待就绪
     let settings = ConnectSettings {
-        address: args.address.clone(),
-        password: args.password.clone(),
-        channel: args.channel.clone(),
-        name: "tsbot".to_string(),
+        address: config.server.address,
+        password: config.server.password,
+        channel: config.server.channel,
+        name: config.bot.name,
         identity,
     };
     let mut con = ts_connection::connect(settings)?;
     ts_connection::wait_until_ready(&mut con).await?;
-    tracing::info!("connected, start streaming {}", args.file);
+    tracing::info!("connected, start streaming {}", config.playback.file);
 
     // 3. ffmpeg 源 + 编码器 → FileOpusSource
-    let (mut child, stdout) = spawn_ffmpeg(&args.file)?;
+    let (mut child, stdout) = spawn_ffmpeg(&config.playback.file)?;
     let mut source = FileOpusSource::new(PcmFrameReader::new(stdout), OpusMusicEncoder::new()?);
 
     // 4. 驱动发送，ctrl_c 可中断
