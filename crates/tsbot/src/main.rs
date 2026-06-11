@@ -1,7 +1,5 @@
-mod audio_source;
 mod config;
 mod identity_store;
-mod opus_enc;
 
 use std::path::Path;
 use std::time::Duration;
@@ -12,9 +10,8 @@ use futures::prelude::*;
 use tsclientlib::{Connection, DisconnectOptions, StreamItem};
 use tsproto_packets::packets::{AudioData, CodecType, OutAudio};
 
-use audio_source::{spawn_ffmpeg, PcmFrameReader};
 use config::Args;
-use opus_enc::OpusMusicEncoder;
+use tsbot_audio::{spawn_ffmpeg, OpusMusicEncoder, PcmFrameReader};
 
 #[tokio::main]
 async fn main() -> Result<()> {

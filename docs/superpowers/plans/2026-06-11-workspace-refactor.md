@@ -71,7 +71,7 @@ members = ["crates/tsbot"]
 [workspace.dependencies]
 tsclientlib = "0.2"
 tsproto-packets = "0.1"
-audiopus = "0.3.0-rc.0"
+audiopus = "0.2"  # 对齐 tsclientlib，规避 0.3-rc 在 lib64 系统的 cmake 链接 bug
 tokio = "1"
 futures = "0.3"
 clap = { version = "4", features = ["derive"] }

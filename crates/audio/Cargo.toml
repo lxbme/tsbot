@@ -1,0 +1,9 @@
+[package]
+name = "tsbot-audio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+audiopus = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "process", "macros", "rt"] }
+anyhow = { workspace = true }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use audiopus::coder::Encoder;
 use audiopus::{Application, Channels, SampleRate};
 
-use crate::audio_source::FRAME_SAMPLES;
+use crate::frame::FRAME_SAMPLES;
 
 /// 把一帧 48kHz 单声道 f32 PCM 编码为 Opus（音乐档）字节。
 pub struct OpusMusicEncoder {

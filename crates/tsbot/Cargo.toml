@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 tsclientlib = { workspace = true }
 tsproto-packets = { workspace = true }
-audiopus = { workspace = true }
+tsbot-audio = { path = "../audio" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "time", "signal", "sync"] }
 futures = { workspace = true }
 clap = { workspace = true }
