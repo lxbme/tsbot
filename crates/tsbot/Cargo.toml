@@ -8,6 +8,7 @@ tsbot-config = { path = "../config" }
 tsbot-ts-connection = { path = "../ts-connection" }
 tsbot-player = { path = "../player" }
 tsbot-commands = { path = "../commands" }
+tsbot-playlist = { path = "../playlist" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
 anyhow = { workspace = true }
 tracing = { workspace = true }
