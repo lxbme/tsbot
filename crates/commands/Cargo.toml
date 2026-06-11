@@ -1,0 +1,13 @@
+[package]
+name = "tsbot-commands"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "commands"
+
+[dependencies]
+tsbot-player = { path = "../player" }
+tsbot-source = { path = "../source" }
+tsbot-ts-connection = { path = "../ts-connection" }
+tokio = { workspace = true, features = ["sync", "macros", "rt"] }
