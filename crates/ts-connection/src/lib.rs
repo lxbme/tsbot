@@ -121,7 +121,20 @@ pub async fn run<S: OpusSource>(
     }
 }
 
+/// 向服务器发送干净的断开，并排空事件直到连接关闭（套超时兜底，防服务器失联时卡死）。
+async fn graceful_disconnect(con: &mut Connection) {
+    if let Err(e) = con.disconnect(DisconnectOptions::new()) {
+        tracing::warn!(%e, "disconnect 失败");
+        return;
+    }
+    let drain = con.events().for_each(|_| future::ready(()));
+    if tokio::time::timeout(Duration::from_secs(5), drain).await.is_err() {
+        tracing::warn!("断开排空超时，强制退出");
+    }
+}
+
 /// 常驻：connect → wait_until_ready → run；断线后指数退避重连，直到 shutdown。
+/// shutdown 触发时主动 disconnect 优雅退出。
 pub async fn run_persistent<S: OpusSource>(
     settings: ConnectSettings,
     source: &mut S,
@@ -132,20 +145,49 @@ pub async fn run_persistent<S: OpusSource>(
     tokio::pin!(shutdown);
     let mut backoff = Duration::from_secs(1);
     loop {
-        let attempt = async {
-            let mut con = connect(settings.clone())?;
-            wait_until_ready(&mut con).await?;
-            tracing::info!("connected");
-            run(&mut con, source, &chat_tx, &mut reply_rx).await
+        // 建立连接（同步）
+        let mut con = match connect(settings.clone()) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(%e, ?backoff, "连接失败，准备重连");
+                tokio::select! {
+                    _ = &mut shutdown => return Ok(()),
+                    _ = tokio::time::sleep(backoff) => {}
+                }
+                backoff = (backoff * 2).min(Duration::from_secs(30));
+                continue;
+            }
         };
+
+        // 等待就绪，与 shutdown 赛跑
         tokio::select! {
-            _ = &mut shutdown => { tracing::info!("shutdown"); return Ok(()); }
-            res = attempt => {
-                if let Err(e) = res {
+            _ = &mut shutdown => { tracing::info!("shutdown"); graceful_disconnect(&mut con).await; return Ok(()); }
+            r = wait_until_ready(&mut con) => {
+                if let Err(e) = r {
+                    tracing::warn!(%e, ?backoff, "等待就绪失败，准备重连");
+                    tokio::select! {
+                        _ = &mut shutdown => { graceful_disconnect(&mut con).await; return Ok(()); }
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                    continue;
+                }
+            }
+        }
+        tracing::info!("connected");
+        backoff = Duration::from_secs(1);
+
+        // 驱动连接，与 shutdown 赛跑
+        tokio::select! {
+            _ = &mut shutdown => { tracing::info!("shutdown"); graceful_disconnect(&mut con).await; return Ok(()); }
+            r = run(&mut con, source, &chat_tx, &mut reply_rx) => {
+                if let Err(e) = r {
                     tracing::warn!(%e, ?backoff, "连接断开，准备重连");
                 }
             }
         }
+
+        // 非 shutdown 的断开：退避后重连
         tokio::select! {
             _ = &mut shutdown => return Ok(()),
             _ = tokio::time::sleep(backoff) => {}
