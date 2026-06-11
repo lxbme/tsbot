@@ -5,7 +5,7 @@ use perms::Permissions;
 use player::{LoopMode, PlayerHandle, Snapshot};
 use playlist::{Playlist, PlaylistItem, Store};
 use tokio::sync::mpsc;
-use ts_connection::ChatMessage;
+use ts_connection::{ChatMessage, Reply};
 
 /// 解析后的指令。Volume/Loop/Remove 携带原始参数，由 run 校验并给出回复。
 pub enum Command {
@@ -172,19 +172,18 @@ pub async fn run(
     snapshot: Arc<Mutex<Snapshot>>,
     store: Store,
     perms: Permissions,
-    reply_tx: mpsc::Sender<String>,
+    reply_tx: mpsc::Sender<Reply>,
 ) {
     while let Some(msg) = chat_rx.recv().await {
         let Some(cmd) = parse(&msg.text) else { continue };
         let name = command_name(&cmd);
         if name != "help" && name != "whoami" && !perms.allows(&msg.invoker_uid, name) {
-            let _ = reply_tx
-                .send(format!("⛔ 无权限：{name}（你的角色：{}）", perms.role_of(&msg.invoker_uid)))
-                .await;
+            let text = format!("⛔ 无权限：{name}（你的角色：{}）", perms.role_of(&msg.invoker_uid));
+            let _ = reply_tx.send(Reply { dest: msg.reply_to, text }).await;
             continue;
         }
-        let reply = handle_command(cmd, &handle, &snapshot, &store, &msg.invoker_uid).await;
-        let _ = reply_tx.send(reply).await;
+        let text = handle_command(cmd, &handle, &snapshot, &store, &msg.invoker_uid).await;
+        let _ = reply_tx.send(Reply { dest: msg.reply_to, text }).await;
     }
 }
 
@@ -411,6 +410,7 @@ async fn handle_playlist(
 mod tests {
     use super::*;
     use player::{NowPlaying, Player, QueueItem};
+    use ts_connection::ReplyDest;
 
     #[test]
     fn parse_routes_all_commands() {
@@ -470,18 +470,18 @@ mod tests {
         let store = Store::new(dir.path().to_path_buf());
         let join = tokio::spawn(run(chat_rx, handle, snap, store, perms::Permissions::default(), reply_tx));
 
-        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1), invoker_uid: "u1".into() });
+        let send = |t: &str| chat_tx.send(ChatMessage { text: t.into(), invoker_id: ts_connection::ClientId(1), invoker_uid: "u1".into(), reply_to: ReplyDest::Channel });
 
         send("!volume 500").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("0-100"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("0-100"));
         send("!volume 60").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("60"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("60"));
         send("!loop bogus").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("用法"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("用法"));
         send("!remove 5").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("没有第 5 首"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("没有第 5 首"));
         send("!help").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("!play"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("!play"));
 
         drop(chat_tx);
         let _ = join.await;
@@ -512,16 +512,17 @@ mod tests {
             text: t.into(),
             invoker_id: ts_connection::ClientId(1),
             invoker_uid: "u1".into(),
+            reply_to: ReplyDest::Channel,
         });
 
         send("!stop").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("无权限"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("无权限"));
         send("!queue").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("没有播放"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("没有播放"));
         send("!help").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("!play"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("!play"));
         send("!whoami").await.unwrap();
-        assert!(reply_rx.recv().await.unwrap().contains("u1"));
+        assert!(reply_rx.recv().await.unwrap().text.contains("u1"));
 
         drop(chat_tx);
         let _ = join.await;
@@ -563,5 +564,32 @@ mod tests {
         assert!(handle_playlist(&toks("delete mix"), &store, &handle, &snap).await.contains("已删除"));
         assert!(handle_playlist(&toks("list"), &store, &handle, &snap).await.contains("还没有"));
         assert!(handle_playlist(&toks("save a/b"), &store, &handle, &snap).await.contains("失败"));
+    }
+
+    #[tokio::test]
+    async fn private_source_replies_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().to_path_buf());
+        let (player, handle, snap) = player::Player::new().unwrap();
+        drop(player);
+        let (chat_tx, chat_rx) = mpsc::channel(8);
+        let (reply_tx, mut reply_rx) = mpsc::channel(8);
+        let join = tokio::spawn(run(chat_rx, handle, snap, store, perms::Permissions::default(), reply_tx));
+
+        chat_tx
+            .send(ChatMessage {
+                text: "!queue".into(),
+                invoker_id: ts_connection::ClientId(1),
+                invoker_uid: "u".into(),
+                reply_to: ReplyDest::Client(ts_connection::ClientId(7)),
+            })
+            .await
+            .unwrap();
+        let r = reply_rx.recv().await.unwrap();
+        assert!(matches!(r.dest, ReplyDest::Client(c) if c == ts_connection::ClientId(7)));
+        assert!(r.text.contains("没有播放"));
+
+        drop(chat_tx);
+        let _ = join.await;
     }
 }
