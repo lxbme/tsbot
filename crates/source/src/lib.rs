@@ -29,9 +29,11 @@ pub async fn resolve(arg: &str) -> Result<Resolved> {
 }
 
 /// yt-dlp 一次取 标题 / 时长 / 直连URL。
+/// `--no-playlist`：URL 含 &list=/电台时只取单个视频，避免枚举（可能无限）的播放列表挂死。
 async fn ytdlp_meta(url: &str) -> Result<Resolved> {
-    let out = Command::new("yt-dlp")
+    let run = Command::new("yt-dlp")
         .args([
+            "--no-playlist",
             "-f", "bestaudio/best",
             "--print", "%(title)s",
             "--print", "%(duration)s",
@@ -39,9 +41,11 @@ async fn ytdlp_meta(url: &str) -> Result<Resolved> {
             url,
         ])
         .stdin(Stdio::null())
-        .output()
-        .await
-        .context("启动 yt-dlp 失败")?;
+        .output();
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(30), run).await {
+        Ok(r) => r.context("启动 yt-dlp 失败")?,
+        Err(_) => bail!("yt-dlp 解析超时"),
+    };
     if !out.status.success() {
         bail!("yt-dlp 解析失败: {}", String::from_utf8_lossy(&out.stderr));
     }
@@ -65,7 +69,7 @@ async fn ffprobe_meta(path: &str) -> (String, Option<Duration>) {
         .and_then(|s| s.to_str())
         .unwrap_or(path)
         .to_string();
-    let out = Command::new("ffprobe")
+    let run = Command::new("ffprobe")
         .args([
             "-v", "quiet",
             "-show_entries", "format=duration:format_tags=title",
@@ -73,9 +77,11 @@ async fn ffprobe_meta(path: &str) -> (String, Option<Duration>) {
             path,
         ])
         .stdin(Stdio::null())
-        .output()
-        .await;
-    let Ok(out) = out else { return (filename, None) };
+        .output();
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(30), run).await {
+        Ok(Ok(out)) => out,
+        _ => return (filename, None), // 超时或启动失败 → 回退文件名
+    };
     if !out.status.success() {
         return (filename, None);
     }
